@@ -148,11 +148,9 @@ jobs:
 
           # Only create release if target was a tag, not upstream/master
           if [ "$TARGET" != "upstream/master" ]; then
-            # Ensure tag exists locally and is pushed to origin
-            if ! git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-              git tag -a "$RELEASE_TAG" -m "cAdvisor $RELEASE_TAG with native SSL/TLS support"
-            fi
-            git push origin "$RELEASE_TAG" || echo "Tag already exists on origin"
+            # Ensure tag points to current HEAD and push with --force (fully idempotent)
+            git tag -fa "$RELEASE_TAG" -m "cAdvisor $RELEASE_TAG with native SSL/TLS support"
+            git push origin "$RELEASE_TAG" --force
 
             # Create release in our repository if it doesn't already exist
             if ! gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
