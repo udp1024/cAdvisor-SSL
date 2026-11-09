@@ -1,4 +1,4 @@
-name: Upstream Sync, Rebase & Build
+name: Auto-Sync & Release cAdvisor SSL
 
 on:
   schedule:
