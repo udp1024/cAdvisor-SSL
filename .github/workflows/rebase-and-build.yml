@@ -18,10 +18,10 @@ permissions:
 
 jobs:
   rebase-and-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # fetch-depth: 0 is required for rebasing across full commit history
           fetch-depth: 0
@@ -125,7 +125,7 @@ jobs:
 
       - name: Build and Push Docker Container
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./deploy/Dockerfile
@@ -170,7 +170,7 @@ jobs:
 
       - name: Report Rebase Conflict (Open GitHub Issue)
         if: failure() && steps.rebase_step.outputs.rebase_status == 'conflict'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const target = process.env.TARGET_NAME;
