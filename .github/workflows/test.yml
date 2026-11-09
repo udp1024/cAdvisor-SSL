@@ -1,5 +1,8 @@
 name: Test
-on: [push, pull_request]
+# Disabled on push and pull_request to prevent failure from Google-internal hardware test requirements.
+# Can still be run manually if needed.
+on:
+  workflow_dispatch:
 jobs:
   test:
     strategy:
