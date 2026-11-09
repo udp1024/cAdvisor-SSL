@@ -14,14 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Default port
+# Default port and protocol
 PORT=8080
+SCHEME="http"
+WGET_OPTS="--quiet --tries=1 --spider"
 
-# Extract port from the cadvisor process command line
+# Extract port and TLS flags from the cadvisor process command line
 if [ -f /proc/1/cmdline ]; then
     CMDLINE=$(tr '\0' ' ' < /proc/1/cmdline)
 
-    # Look for -port=XXXX or --port=XXXX
+    # Look for arguments
     for arg in $CMDLINE; do
         case "$arg" in
             -port=*)
@@ -30,8 +32,12 @@ if [ -f /proc/1/cmdline ]; then
             --port=*)
                 PORT="${arg#--port=}"
                 ;;
+            -tls_cert_file=*|--tls_cert_file=*)
+                SCHEME="https"
+                WGET_OPTS="$WGET_OPTS --no-check-certificate"
+                ;;
         esac
     done
 fi
 
-wget --quiet --tries=1 --spider "http://localhost:${PORT}/healthz" || exit 1
+wget $WGET_OPTS "${SCHEME}://localhost:${PORT}/healthz" || exit 1
