@@ -79,8 +79,8 @@ Images are published to both GitHub Container Registry and Docker Hub:
 
 | Registry | Image URL |
 | :--- | :--- |
-| **GitHub Container Registry** | `ghcr.io/udp1024/cadvisor-ssl:<version>-ssl`<br>`ghcr.io/udp1024/cadvisor-ssl:latest-ssl` |
-| **Docker Hub** | `udp1024/cadvisor-ssl:<version>-ssl`<br>`udp1024/cadvisor-ssl:latest-ssl` |
+| **GitHub Container Registry** | `ghcr.io/udp1024/cadvisor-ssl:<version>-ssl`<br>`ghcr.io/udp1024/cadvisor-ssl:latest` |
+| **Docker Hub** | `udp1024/cadvisor-ssl:<version>-ssl`<br>`udp1024/cadvisor-ssl:latest` |
 
 ---
 
@@ -130,7 +130,7 @@ docker run -d \
   -v /var/lib/docker/:/var/lib/docker:ro \
   -v /dev/disk/:/dev/disk:ro \
   -v /etc/cadvisor-certs:/etc/cadvisor-certs:ro \
-  ghcr.io/udp1024/cadvisor-ssl:latest-ssl \
+  ghcr.io/udp1024/cadvisor-ssl:latest \
     -port=8443 \
     -tls_cert_file=/etc/cadvisor-certs/cadvisor.crt \
     -tls_key_file=/etc/cadvisor-certs/cadvisor.key
@@ -156,7 +156,7 @@ version: '3.8'
 
 services:
   cadvisor:
-    image: ghcr.io/udp1024/cadvisor-ssl:latest-ssl
+    image: ghcr.io/udp1024/cadvisor-ssl:latest
     container_name: cadvisor-ssl
     restart: unless-stopped
     privileged: true
@@ -215,7 +215,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: cadvisor
-          image: ghcr.io/udp1024/cadvisor-ssl:latest-ssl
+          image: ghcr.io/udp1024/cadvisor-ssl:latest
           resources:
             requests:
               memory: 200Mi
