@@ -6,6 +6,7 @@
 
 [![Auto-Sync & Release cAdvisor SSL](https://github.com/udp1024/cAdvisor-SSL/actions/workflows/rebase-and-build.yml/badge.svg)](https://github.com/udp1024/cAdvisor-SSL/actions/workflows/rebase-and-build.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/udp1024/cAdvisor-SSL?color=blue&label=release)](https://github.com/udp1024/cAdvisor-SSL/releases)
+[![Architectures](https://img.shields.io/badge/Architectures-linux%2Famd64%20%7C%20linux%2Farm64-blue.svg)](https://github.com/udp1024/cAdvisor-SSL)
 [![GHCR Container](https://img.shields.io/badge/GHCR-ghcr.io%2Fudp1024%2Fcadvisor--ssl-blue?logo=github)](https://github.com/users/udp1024/packages/container/package/cadvisor-ssl)
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-udp1024%2Fcadvisor--ssl-2496ED?logo=docker)](https://hub.docker.com/r/udp1024/cadvisor-ssl)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -23,6 +24,7 @@ An enterprise-ready, enhanced distribution of Google's **[cAdvisor](https://gith
   - [The Solution](#the-solution)
 - [✨ Key Features](#-key-features)
 - [📦 Container Registries & Image Tags](#-container-registries--image-tags)
+  - [🖥️ Supported Architectures (Multi-Arch)](#️-supported-architectures-multi-arch)
 - [🔒 SSL / TLS Command-Line Flags](#-ssl--tls-command-line-flags)
 - [🚀 Quick Start & Usage Examples](#-quick-start--usage-examples)
   - [1. Generate Certificates (Test / Self-Signed)](#1-generate-certificates-test--self-signed)
@@ -67,6 +69,7 @@ Traditionally, organizations secure cAdvisor by running a reverse proxy sidecar 
 
 * 🔐 **Native TLS 1.2 & 1.3**: Direct SSL termination on any port you specify.
 * 🛡️ **Mutual TLS (mTLS) Authentication**: Restrict Prometheus scraping to clients presenting valid client certificates signed by your CA (`-tls_client_ca_file`).
+* 🖥️ **Multi-Architecture Support**: Built for both **`linux/amd64`** (x86_64) and **`linux/arm64`** (AArch64) processors.
 * 🩺 **Smart HTTPS Healthcheck**: The container healthcheck (`/healthz`) automatically detects when TLS is active and queries over HTTPS without certificate validation errors.
 * 🔄 **Automated Upstream Rebase**: Tracks Google's official release tags automatically via GitHub Actions. When Google releases a new version, a matching `-ssl` container is published within 24 hours.
 * 📦 **Multi-Registry Publishing**: Available from both **GitHub Container Registry (GHCR)** and **Docker Hub**.
@@ -81,6 +84,31 @@ Images are published to both GitHub Container Registry and Docker Hub:
 | :--- | :--- |
 | **GitHub Container Registry** | `ghcr.io/udp1024/cadvisor-ssl:<version>-ssl`<br>`ghcr.io/udp1024/cadvisor-ssl:latest` |
 | **Docker Hub** | `udp1024/cadvisor-ssl:<version>-ssl`<br>`udp1024/cadvisor-ssl:latest` |
+
+### 🖥️ Supported Architectures (Multi-Arch)
+
+Every image tag is published as an OCI multi-architecture manifest list. When you run `docker pull` or `docker run`, Docker automatically detects and pulls the matching image for your CPU architecture:
+
+| Architecture | Docker Platform | Targeted Processors & Hardware |
+| :--- | :--- | :--- |
+| **AMD64 / x86_64** | `linux/amd64` | Intel Xeon / Core, AMD EPYC / Ryzen, Standard Cloud VMs (AWS, GCP, Azure, Hetzner, DigitalOcean) |
+| **ARM64 / AArch64** | `linux/arm64` | AWS Graviton (c6g, c7g, m6g, t4g), Apple Silicon (M1/M2/M3/M4 via Docker Desktop), Ampere Altra, Raspberry Pi 4 / 5 (64-bit OS) |
+
+#### Verify Multi-Platform Manifest
+You can inspect the supported platform manifests directly using Docker Buildx:
+```bash
+docker buildx imagetools inspect udp1024/cadvisor-ssl:latest
+```
+
+#### Explicit Architecture Selection (Optional)
+If running cross-architecture workloads or emulating inside CI:
+```bash
+# Force AMD64 on an ARM64 machine
+docker run --platform linux/amd64 -d ... udp1024/cadvisor-ssl:latest
+
+# Force ARM64
+docker run --platform linux/arm64 -d ... udp1024/cadvisor-ssl:latest
+```
 
 ---
 

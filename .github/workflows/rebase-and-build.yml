@@ -169,7 +169,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/cadvisor-ssl
           short-description: "Google cAdvisor with native SSL/TLS and Mutual TLS (mTLS) support."
-          readme-filepath: ./README.md
+          readme-filepath: ./DOCKERHUB.md
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
