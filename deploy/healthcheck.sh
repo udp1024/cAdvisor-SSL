@@ -19,9 +19,22 @@ PORT=8080
 SCHEME="http"
 WGET_OPTS="--quiet --tries=1 --spider"
 
-# Extract port and TLS flags from the cadvisor process command line
+# Find cadvisor process cmdline (handle container PID 1 or --pid=host)
+TARGET_PID=1
 if [ -f /proc/1/cmdline ]; then
-    CMDLINE=$(tr '\0' ' ' < /proc/1/cmdline)
+    INIT_CMD=$(tr '\0' ' ' < /proc/1/cmdline)
+    case "$INIT_CMD" in
+        *cadvisor*) ;;
+        *)
+            # If running with --pid=host, PID 1 is host init. Find cadvisor pid
+            CPID=$(pidof cadvisor 2>/dev/null | awk '{print $1}')
+            if [ -n "$CPID" ] && [ -f "/proc/$CPID/cmdline" ]; then
+                TARGET_PID="$CPID"
+            fi
+            ;;
+    esac
+
+    CMDLINE=$(tr '\0' ' ' < "/proc/$TARGET_PID/cmdline")
 
     # Look for arguments
     for arg in $CMDLINE; do
