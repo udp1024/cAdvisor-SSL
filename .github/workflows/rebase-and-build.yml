@@ -137,12 +137,12 @@ jobs:
           REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
 
           # GitHub Container Registry tags
-          TAGS="ghcr.io/${REPO_LOWER}:${TARGET}-ssl,ghcr.io/${REPO_LOWER}:latest-ssl"
+          TAGS="ghcr.io/${REPO_LOWER}:${TARGET},ghcr.io/${REPO_LOWER}:${TARGET}-ssl,ghcr.io/${REPO_LOWER}:latest"
 
           # Docker Hub tags (if secret is configured)
           if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
             DH_USER=$(echo "${{ secrets.DOCKERHUB_USERNAME }}" | tr '[:upper:]' '[:lower:]')
-            TAGS="${TAGS},${DH_USER}/cadvisor-ssl:${TARGET}-ssl,${DH_USER}/cadvisor-ssl:latest-ssl"
+            TAGS="${TAGS},${DH_USER}/cadvisor-ssl:${TARGET},${DH_USER}/cadvisor-ssl:${TARGET}-ssl,${DH_USER}/cadvisor-ssl:latest"
             echo "Docker Hub enabled for user: ${DH_USER}"
           fi
 
@@ -205,7 +205,7 @@ jobs:
           \`\`\`bash
           # GitHub Container Registry:
           docker pull ${GHCR_IMAGE}:$RELEASE_TAG
-          docker pull ${GHCR_IMAGE}:latest-ssl
+          docker pull ${GHCR_IMAGE}:latest
           \`\`\`"
             fi
           fi
