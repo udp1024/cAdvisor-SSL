@@ -15,6 +15,8 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"net/http"
@@ -24,6 +26,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/google/cadvisor/cmd/internal/appmetrics"
 	cadvisorhttp "github.com/google/cadvisor/cmd/internal/http"
@@ -52,6 +55,11 @@ var argPort = flag.Int("port", 8080, "port to listen")
 var maxProcs = flag.Int("max_procs", 0, "max number of CPUs that can be used simultaneously. Less than 1 for default (number of cores).")
 
 var versionFlag = flag.Bool("version", false, "print cAdvisor version and exit")
+
+var tlsCertFile = flag.String("tls_cert_file", "", "Path to SSL/TLS certificate file")
+var tlsKeyFile = flag.String("tls_key_file", "", "Path to SSL/TLS private key file")
+var tlsClientCA = flag.String("tls_client_ca_file", "", "Path to client CA certificate file for mutual TLS (mTLS)")
+var tlsMinVersion = flag.String("tls_min_version", "1.2", "Minimum TLS version: '1.2' or '1.3'")
 
 var httpAuthFile = flag.String("http_auth_file", "", "HTTP auth file for the web UI")
 var httpAuthRealm = flag.String("http_auth_realm", "localhost", "HTTP auth realm for the web UI")
@@ -179,13 +187,57 @@ func main() {
 	// Install signal handler.
 	installSignalHandler(resourceManager)
 
-	klog.V(1).Infof("Starting cAdvisor version: %s-%s on port %d", version.Info["version"], version.Info["revision"], *argPort)
-
 	rootMux := http.NewServeMux()
 	rootMux.Handle(*urlBasePrefix+"/", http.StripPrefix(*urlBasePrefix, mux))
 
 	addr := fmt.Sprintf("%s:%d", *argIP, *argPort)
-	klog.Fatal(http.ListenAndServe(addr, rootMux))
+
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      rootMux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	if *tlsCertFile != "" && *tlsKeyFile != "" {
+		tlsConfig, err := setupTLSConfig(*tlsCertFile, *tlsKeyFile, *tlsClientCA, *tlsMinVersion)
+		if err != nil {
+			klog.Fatalf("Failed to initialize TLS config: %v", err)
+		}
+		server.TLSConfig = tlsConfig
+		klog.Infof("Starting cAdvisor with SSL/TLS on %s", addr)
+		klog.Fatal(server.ListenAndServeTLS(*tlsCertFile, *tlsKeyFile))
+	} else if *tlsCertFile != "" || *tlsKeyFile != "" {
+		klog.Fatalf("Both -tls_cert_file and -tls_key_file must be specified to enable SSL/TLS")
+	} else {
+		klog.V(1).Infof("Starting cAdvisor version: %s-%s on port %d", version.Info["version"], version.Info["revision"], *argPort)
+		klog.Fatal(server.ListenAndServe())
+	}
+}
+
+func setupTLSConfig(certFile, keyFile, clientCAFile, minVersion string) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+	if minVersion == "1.3" {
+		tlsConfig.MinVersion = tls.VersionTLS13
+	}
+
+	if clientCAFile != "" {
+		caCert, err := os.ReadFile(clientCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read client CA file: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse client CA certificates from %s", clientCAFile)
+		}
+		tlsConfig.ClientCAs = caCertPool
+		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+
+	return tlsConfig, nil
 }
 
 func setMaxProcs() {
