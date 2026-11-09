@@ -104,9 +104,13 @@ jobs:
           # Push to your repository using --force-with-lease for safe history rewrite
           git push origin main --force-with-lease
 
+      - name: Set up QEMU
+        if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
@@ -151,6 +155,7 @@ jobs:
         with:
           context: .
           file: ./deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
           build-args: |
             VERSION=${{ steps.target.outputs.target }}-ssl
           push: true
