@@ -139,7 +139,8 @@ jobs:
       - name: Create Git Tag and GitHub Release
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           TARGET="${{ steps.target.outputs.target }}"
           RELEASE_TAG="${TARGET}-ssl"
@@ -147,11 +148,16 @@ jobs:
 
           # Only create release if target was a tag, not upstream/master
           if [ "$TARGET" != "upstream/master" ]; then
+            # Ensure tag exists locally and is pushed to origin
             if ! git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
               git tag -a "$RELEASE_TAG" -m "cAdvisor $RELEASE_TAG with native SSL/TLS support"
-              git push origin "$RELEASE_TAG"
+            fi
+            git push origin "$RELEASE_TAG" || echo "Tag already exists on origin"
 
+            # Create release in our repository if it doesn't already exist
+            if ! gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
               gh release create "$RELEASE_TAG" \
+                --repo "${{ github.repository }}" \
                 --title "cAdvisor $RELEASE_TAG" \
                 --notes "Automated release tracking upstream Google cAdvisor [$TARGET](https://github.com/google/cadvisor/releases/tag/$TARGET).
 
