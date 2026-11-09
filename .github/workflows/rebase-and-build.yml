@@ -1,0 +1,157 @@
+name: Upstream Sync, Rebase & Build
+
+on:
+  schedule:
+    # Run weekly on Monday at 04:00 UTC (or adjust as needed)
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: 'Specific upstream Google tag to rebase onto (e.g. v0.49.2). Leave blank to rebase onto latest release.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  packages: write
+  issues: write
+
+jobs:
+  rebase-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 is required for rebasing across full commit history
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git Identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Google Upstream Remote
+        run: |
+          if ! git remote | grep -q "^upstream$"; then
+            git remote add upstream https://github.com/google/cadvisor.git
+          fi
+          git fetch upstream --tags
+
+      - name: Determine Upstream Rebase Target
+        id: target
+        run: |
+          if [ -n "${{ github.event.inputs.target_tag }}" ]; then
+            REBASE_TARGET="${{ github.event.inputs.target_tag }}"
+          else
+            # Get latest official release tag from Google
+            LATEST_TAG=$(curl -s https://api.github.com/repos/google/cadvisor/releases/latest | jq -r '.tag_name')
+            if [ "$LATEST_TAG" = "null" ] || [ -z "$LATEST_TAG" ]; then
+              echo "Could not fetch release tag from API. Falling back to upstream/master."
+              REBASE_TARGET="upstream/master"
+            else
+              REBASE_TARGET="$LATEST_TAG"
+            fi
+          fi
+          echo "Target for rebase: $REBASE_TARGET"
+          echo "target=$REBASE_TARGET" >> $GITHUB_OUTPUT
+
+      - name: Check If Already Rebased Onto Target
+        id: check_state
+        run: |
+          TARGET="${{ steps.target.outputs.target }}"
+          # Check if the target commit/tag is already an ancestor of main
+          if git merge-base --is-ancestor "$TARGET" HEAD; then
+            echo "Current branch already contains $TARGET."
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "Manual trigger override: proceeding."
+              echo "needs_rebase=true" >> $GITHUB_OUTPUT
+            else
+              echo "Branch is up-to-date. Skipping rebase."
+              echo "needs_rebase=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "New upstream commits/tag found ($TARGET). Rebase required."
+            echo "needs_rebase=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Perform Git Rebase
+        id: rebase_step
+        if: steps.check_state.outputs.needs_rebase == 'true'
+        run: |
+          TARGET="${{ steps.target.outputs.target }}"
+          echo "Rebasing our SSL commits on top of $TARGET..."
+          
+          if git rebase "$TARGET"; then
+            echo "Rebase succeeded without conflicts!"
+            echo "rebase_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "Rebase conflict encountered! Aborting rebase to preserve branch safety."
+            git rebase --abort
+            echo "rebase_status=conflict" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Push Rebased Branch to Origin
+        if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        run: |
+          # Push to your repository using --force-with-lease for safe history rewrite
+          git push origin main --force-with-lease
+
+      - name: Set up Docker Buildx
+        if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Container
+        if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deploy/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.target.outputs.target }}-ssl
+            ghcr.io/${{ github.repository }}:latest-ssl
+
+      - name: Report Rebase Conflict (Open GitHub Issue)
+        if: failure() && steps.rebase_step.outputs.rebase_status == 'conflict'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const target = process.env.TARGET_NAME;
+            const title = `⚠️ Upstream rebase conflict when updating to ${target}`;
+            const body = `Automated rebase onto upstream Google cAdvisor target **${target}** encountered a conflict.
+            
+            **Safety Action Taken:**
+            The rebase was automatically aborted (\`git rebase --abort\`). Your production branch \`main\` has **NOT** been modified and remains fully operational.
+            
+            **How to resolve locally:**
+            \`\`\`bash
+            git fetch upstream --tags
+            git checkout main
+            git rebase ${target}
+            # Fix any conflict markers in cmd/cadvisor.go or deploy/healthcheck.sh
+            git add <resolved-files>
+            git rebase --continue
+            git push origin main --force-with-lease
+            \`\`\`
+            
+            Check the [Action run logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body
+            });
+        env:
+          TARGET_NAME: ${{ steps.target.outputs.target }}
