@@ -2,12 +2,12 @@ name: Upstream Sync, Rebase & Build
 
 on:
   schedule:
-    # Run weekly on Monday at 04:00 UTC (or adjust as needed)
-    - cron: '0 4 * * 1'
+    # Run daily at 03:00 UTC to catch new Google releases quickly
+    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       target_tag:
-        description: 'Specific upstream Google tag to rebase onto (e.g. v0.49.2). Leave blank to rebase onto latest release.'
+        description: 'Specific upstream Google tag to rebase onto (e.g. v0.51.0). Leave blank to rebase onto latest release.'
         required: false
         default: ''
 
@@ -39,6 +39,11 @@ jobs:
           fi
           git fetch upstream --tags
 
+      - name: Update upstream-tracking Branch
+        run: |
+          echo "Updating upstream-tracking branch to mirror Google upstream/master..."
+          git push origin upstream/master:refs/heads/upstream-tracking || echo "upstream-tracking already up to date"
+
       - name: Determine Upstream Rebase Target
         id: target
         run: |
@@ -68,7 +73,7 @@ jobs:
               echo "Manual trigger override: proceeding."
               echo "needs_rebase=true" >> $GITHUB_OUTPUT
             else
-              echo "Branch is up-to-date. Skipping rebase."
+              echo "Branch is up-to-date with $TARGET. Skipping rebase."
               echo "needs_rebase=false" >> $GITHUB_OUTPUT
             fi
           else
@@ -117,10 +122,43 @@ jobs:
         with:
           context: .
           file: ./deploy/Dockerfile
+          build-args: |
+            VERSION=${{ steps.target.outputs.target }}-ssl
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.target.outputs.target }}-ssl
             ghcr.io/${{ github.repository }}:latest-ssl
+
+      - name: Create Git Tag and GitHub Release
+        if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET="${{ steps.target.outputs.target }}"
+          RELEASE_TAG="${TARGET}-ssl"
+
+          # Only create release if target was a tag, not upstream/master
+          if [ "$TARGET" != "upstream/master" ]; then
+            if ! git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+              git tag -a "$RELEASE_TAG" -m "cAdvisor $RELEASE_TAG with native SSL/TLS support"
+              git push origin "$RELEASE_TAG"
+
+              gh release create "$RELEASE_TAG" \
+                --title "cAdvisor $RELEASE_TAG" \
+                --notes "Automated release tracking upstream Google cAdvisor [$TARGET](https://github.com/google/cadvisor/releases/tag/$TARGET).
+
+          ### What is included:
+          * Upstream Google cAdvisor **$TARGET**
+          * Native SSL/TLS listener flags: \`-tls_cert_file\`, \`-tls_key_file\`, \`-tls_client_ca_file\`, \`-tls_min_version\`
+          * Container healthcheck with automatic HTTPS detection
+
+          ### Container Image
+          \`\`\`bash
+          docker pull ghcr.io/${{ github.repository }}:$RELEASE_TAG
+          docker pull ghcr.io/${{ github.repository }}:latest-ssl
+          \`\`\`"
+            fi
+          fi
 
       - name: Report Rebase Conflict (Open GitHub Issue)
         if: failure() && steps.rebase_step.outputs.rebase_status == 'conflict'
@@ -155,3 +193,4 @@ jobs:
             });
         env:
           TARGET_NAME: ${{ steps.target.outputs.target }}
+
