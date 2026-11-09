@@ -1,6 +1,80 @@
 ![cAdvisor](logo.png "cAdvisor")
 
-![test status](https://github.com/google/cadvisor/workflows/Test/badge.svg)
+# cAdvisor with Native SSL/TLS Support
+
+[![Upstream Sync, Rebase & Build](https://github.com/udp1024/cAdvisor-SSL/actions/workflows/rebase-and-build.yml/badge.svg)](https://github.com/udp1024/cAdvisor-SSL/actions/workflows/rebase-and-build.yml)
+
+This repository is an enhanced standalone distribution of Google's [cAdvisor](https://github.com/google/cadvisor) with **native SSL/TLS and mutual TLS (mTLS) support**.
+
+It includes automated upstream tracking: whenever Google publishes a new cAdvisor release, GitHub Actions automatically rebases the SSL patch, compiles, and publishes release containers tagged with the matching Google version (e.g. `v0.51.0-ssl`).
+
+---
+
+## 🔒 SSL / TLS Flags
+
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `-tls_cert_file` | `""` | Path to SSL/TLS certificate (PEM format). Required for HTTPS. |
+| `-tls_key_file` | `""` | Path to SSL/TLS private key (PEM format). Required for HTTPS. |
+| `-tls_client_ca_file`| `""` | Path to client CA cert pool for **Mutual TLS (mTLS)** verification. |
+| `-tls_min_version` | `"1.2"` | Minimum TLS version: `"1.2"` or `"1.3"`. |
+
+> **Note:** If `-tls_cert_file` and `-tls_key_file` are omitted, cAdvisor falls back to standard HTTP mode.
+
+---
+
+## 🚀 Quick Start: Running with SSL
+
+### 1. Docker Run
+Mount your certificate and private key into the container:
+
+```bash
+sudo docker run \
+  --volume=/:/rootfs:ro \
+  --volume=/var/run:/var/run:ro \
+  --volume=/sys:/sys:ro \
+  --volume=/var/lib/docker/:/var/lib/docker:ro \
+  --volume=/dev/disk/:/dev/disk:ro \
+  --volume=/etc/ssl/certs/cadvisor.crt:/etc/ssl/certs/cadvisor.crt:ro \
+  --volume=/etc/ssl/private/cadvisor.key:/etc/ssl/private/cadvisor.key:ro \
+  --publish=8443:8443 \
+  --detach=true \
+  --name=cadvisor-ssl \
+  --privileged \
+  --device=/dev/kmsg \
+  ghcr.io/udp1024/cadvisor-ssl:latest-ssl \
+    -port=8443 \
+    -tls_cert_file=/etc/ssl/certs/cadvisor.crt \
+    -tls_key_file=/etc/ssl/private/cadvisor.key
+```
+
+### 2. Standalone Binary
+```bash
+./cadvisor \
+  -port=8443 \
+  -tls_cert_file=/path/to/server.crt \
+  -tls_key_file=/path/to/server.key \
+  -tls_min_version=1.3
+```
+
+### 3. Prometheus Scrape Configuration (`prometheus.yml`)
+To scrape metrics over HTTPS:
+
+```yaml
+scrape_configs:
+  - job_name: 'cadvisor-ssl'
+    scheme: https
+    static_configs:
+      - targets: ['cadvisor.example.com:8443']
+    tls_config:
+      ca_file: /etc/prometheus/ca.crt
+      # Or if using self-signed certs:
+      # insecure_skip_verify: true
+```
+
+---
+
+## Upstream Google cAdvisor Details
 
 cAdvisor (Container Advisor) provides container users an understanding of the resource usage and performance characteristics of their running containers. It is a running daemon that collects, aggregates, processes, and exports information about running containers. Specifically, for each container it keeps resource isolation parameters, historical resource usage, histograms of complete historical resource usage and network statistics. This data is exported by container and machine-wide.
 
