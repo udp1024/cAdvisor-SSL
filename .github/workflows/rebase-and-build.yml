@@ -156,6 +156,18 @@ jobs:
           push: true
           tags: ${{ steps.image_info.outputs.tags }}
 
+      - name: Sync README to Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/cadvisor-ssl
+          short-description: "Google cAdvisor with native SSL/TLS and Mutual TLS (mTLS) support."
+          readme-filepath: ./README.md
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
       - name: Create Git Tag and GitHub Release
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
         env:
