@@ -106,11 +106,11 @@ jobs:
 
       - name: Set up Docker Buildx
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
