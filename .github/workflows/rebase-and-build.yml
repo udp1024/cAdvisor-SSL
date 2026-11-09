@@ -116,12 +116,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Lowercase Repository Name for Docker
+      - name: Log in to Docker Hub (Optional)
+        if: env.DOCKERHUB_USERNAME != '' && steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+      - name: Prepare Multi-Registry Image Tags
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
         id: image_info
         run: |
-          IMAGE_NAME="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          TARGET="${{ steps.target.outputs.target }}"
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+
+          # GitHub Container Registry tags
+          TAGS="ghcr.io/${REPO_LOWER}:${TARGET}-ssl,ghcr.io/${REPO_LOWER}:latest-ssl"
+
+          # Docker Hub tags (if secret is configured)
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+            DH_USER=$(echo "${{ secrets.DOCKERHUB_USERNAME }}" | tr '[:upper:]' '[:lower:]')
+            TAGS="${TAGS},${DH_USER}/cadvisor-ssl:${TARGET}-ssl,${DH_USER}/cadvisor-ssl:latest-ssl"
+            echo "Docker Hub enabled for user: ${DH_USER}"
+          fi
+
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "ghcr_name=ghcr.io/${REPO_LOWER}" >> $GITHUB_OUTPUT
 
       - name: Build and Push Docker Container
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
@@ -132,9 +154,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.target.outputs.target }}-ssl
           push: true
-          tags: |
-            ${{ steps.image_info.outputs.image_name }}:${{ steps.target.outputs.target }}-ssl
-            ${{ steps.image_info.outputs.image_name }}:latest-ssl
+          tags: ${{ steps.image_info.outputs.tags }}
 
       - name: Create Git Tag and GitHub Release
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
@@ -144,7 +164,7 @@ jobs:
         run: |
           TARGET="${{ steps.target.outputs.target }}"
           RELEASE_TAG="${TARGET}-ssl"
-          IMAGE_NAME="${{ steps.image_info.outputs.image_name }}"
+          GHCR_IMAGE="${{ steps.image_info.outputs.ghcr_name }}"
 
           # Only create release if target was a tag, not upstream/master
           if [ "$TARGET" != "upstream/master" ]; then
@@ -164,10 +184,11 @@ jobs:
           * Native SSL/TLS listener flags: \`-tls_cert_file\`, \`-tls_key_file\`, \`-tls_client_ca_file\`, \`-tls_min_version\`
           * Container healthcheck with automatic HTTPS detection
 
-          ### Container Image
+          ### Container Images
           \`\`\`bash
-          docker pull ${IMAGE_NAME}:$RELEASE_TAG
-          docker pull ${IMAGE_NAME}:latest-ssl
+          # GitHub Container Registry:
+          docker pull ${GHCR_IMAGE}:$RELEASE_TAG
+          docker pull ${GHCR_IMAGE}:latest-ssl
           \`\`\`"
             fi
           fi

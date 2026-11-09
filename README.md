@@ -1,160 +1,329 @@
+<div align="center">
+
 ![cAdvisor](logo.png "cAdvisor")
 
-# cAdvisor with Native SSL/TLS Support
+# cAdvisor with Native SSL / TLS Support
 
-[![Upstream Sync, Rebase & Build](https://github.com/udp1024/cAdvisor-SSL/actions/workflows/rebase-and-build.yml/badge.svg)](https://github.com/udp1024/cAdvisor-SSL/actions/workflows/rebase-and-build.yml)
+[![Auto-Sync & Release cAdvisor SSL](https://github.com/udp1024/cAdvisor-SSL/actions/workflows/rebase-and-build.yml/badge.svg)](https://github.com/udp1024/cAdvisor-SSL/actions/workflows/rebase-and-build.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/udp1024/cAdvisor-SSL?color=blue&label=release)](https://github.com/udp1024/cAdvisor-SSL/releases)
+[![GHCR Container](https://img.shields.io/badge/GHCR-ghcr.io%2Fudp1024%2Fcadvisor--ssl-blue?logo=github)](https://github.com/users/udp1024/packages/container/package/cadvisor-ssl)
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-udp1024%2Fcadvisor--ssl-2496ED?logo=docker)](https://hub.docker.com/r/udp1024/cadvisor-ssl)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-This repository is an enhanced standalone distribution of Google's [cAdvisor](https://github.com/google/cadvisor) with **native SSL/TLS and mutual TLS (mTLS) support**.
+An enterprise-ready, enhanced distribution of Google's **[cAdvisor](https://github.com/google/cadvisor)** with **native SSL/TLS and Mutual TLS (mTLS) support**, automated upstream release tracking, and smart container healthchecks.
 
-It includes automated upstream tracking: whenever Google publishes a new cAdvisor release, GitHub Actions automatically rebases the SSL patch, compiles, and publishes release containers tagged with the matching Google version (e.g. `v0.51.0-ssl`).
+</div>
 
 ---
 
-## 🔒 SSL / TLS Flags
+## 📑 Table of Contents
+- [Why cAdvisor-SSL?](#-why-cadvisor-ssl)
+  - [The Problem with Vanilla cAdvisor](#the-problem-with-vanilla-cadvisor)
+  - [Why Native SSL vs. Sidecar Proxies?](#why-native-ssl-vs-sidecar-proxies)
+  - [The Solution](#the-solution)
+- [✨ Key Features](#-key-features)
+- [📦 Container Registries & Image Tags](#-container-registries--image-tags)
+- [🔒 SSL / TLS Command-Line Flags](#-ssl--tls-command-line-flags)
+- [🚀 Quick Start & Usage Examples](#-quick-start--usage-examples)
+  - [1. Generate Certificates (Test / Self-Signed)](#1-generate-certificates-test--self-signed)
+  - [2. Run with Docker](#2-run-with-docker)
+  - [3. Run with Docker Compose](#3-run-with-docker-compose)
+  - [4. Deploy to Kubernetes (DaemonSet)](#4-deploy-to-kubernetes-daemonset)
+  - [5. Scrape with Prometheus](#5-scrape-with-prometheus)
+- [🤖 Automated Upstream Release Tracking](#-automated-upstream-release-tracking)
+- [License & Credits](#license--credits)
+
+---
+
+## 💡 Why cAdvisor-SSL?
+
+### The Problem with Vanilla cAdvisor
+Google's official cAdvisor daemon only serves its web interface and Prometheus metrics (`/metrics`) over **unencrypted plaintext HTTP**. 
+
+In modern production environments:
+* **Security & Compliance**: Regulations like **PCI-DSS**, **HIPAA**, **SOC 2**, and **FedRAMP** strictly prohibit transmitting infrastructure metrics and host internals in cleartext. Plaintext metrics reveal process command lines, environment configurations, container names, and hardware topologies over internal networks.
+* **Zero Trust Networks**: Modern Kubernetes clusters and hybrid-cloud infrastructures enforce encryption in transit for all service-to-service communications.
+
+### Why Native SSL vs. Sidecar Proxies?
+Traditionally, organizations secure cAdvisor by running a reverse proxy sidecar (such as Nginx, Envoy, Caddy, or Ghostunnel) in front of every cAdvisor instance. While viable, sidecars introduce major drawbacks:
+
+| Metric | Sidecar Proxy (e.g. Nginx/Envoy) | Native cAdvisor-SSL |
+| :--- | :--- | :--- |
+| **Containers per Node** | 2 containers (proxy + cAdvisor) | **1 lightweight container** |
+| **Memory Footprint** | Additional 50MB - 150MB per node | **0MB extra memory** (built into Go binary) |
+| **Port & Loopback Routing** | Complex localhost forwarding | **Direct TLS port binding** |
+| **DaemonSet Complexity** | Shared network namespaces, extra configs | **Standard single-container DaemonSet** |
+| **Failure Points** | Proxy crashes leave cAdvisor unreachable | **Zero intermediary failure points** |
+
+### The Solution
+**`cAdvisor-SSL`** adds first-class, standard-library TLS directly into cAdvisor's HTTP server:
+* Uses Go's high-performance `crypto/tls` and `crypto/x509` packages.
+* Introduces zero external third-party dependencies.
+* Completely backward compatible: falls back to standard HTTP if no certificates are provided.
+
+---
+
+## ✨ Key Features
+
+* 🔐 **Native TLS 1.2 & 1.3**: Direct SSL termination on any port you specify.
+* 🛡️ **Mutual TLS (mTLS) Authentication**: Restrict Prometheus scraping to clients presenting valid client certificates signed by your CA (`-tls_client_ca_file`).
+* 🩺 **Smart HTTPS Healthcheck**: The container healthcheck (`/healthz`) automatically detects when TLS is active and queries over HTTPS without certificate validation errors.
+* 🔄 **Automated Upstream Rebase**: Tracks Google's official release tags automatically via GitHub Actions. When Google releases a new version, a matching `-ssl` container is published within 24 hours.
+* 📦 **Multi-Registry Publishing**: Available from both **GitHub Container Registry (GHCR)** and **Docker Hub**.
+
+---
+
+## 📦 Container Registries & Image Tags
+
+Images are published to both GitHub Container Registry and Docker Hub:
+
+| Registry | Image URL |
+| :--- | :--- |
+| **GitHub Container Registry** | `ghcr.io/udp1024/cadvisor-ssl:<version>-ssl`<br>`ghcr.io/udp1024/cadvisor-ssl:latest-ssl` |
+| **Docker Hub** | `udp1024/cadvisor-ssl:<version>-ssl`<br>`udp1024/cadvisor-ssl:latest-ssl` |
+
+---
+
+## 🔒 SSL / TLS Command-Line Flags
 
 | Flag | Default | Description |
 | :--- | :--- | :--- |
-| `-tls_cert_file` | `""` | Path to SSL/TLS certificate (PEM format). Required for HTTPS. |
-| `-tls_key_file` | `""` | Path to SSL/TLS private key (PEM format). Required for HTTPS. |
-| `-tls_client_ca_file`| `""` | Path to client CA cert pool for **Mutual TLS (mTLS)** verification. |
-| `-tls_min_version` | `"1.2"` | Minimum TLS version: `"1.2"` or `"1.3"`. |
+| `-tls_cert_file` | `""` | Path to server SSL/TLS certificate (PEM format). Required for HTTPS. |
+| `-tls_key_file` | `""` | Path to server SSL/TLS private key (PEM format). Required for HTTPS. |
+| `-tls_client_ca_file` | `""` | *(Optional)* Path to CA certificate pool. When set, enables **Mutual TLS (mTLS)** and requires clients (e.g. Prometheus) to present a valid client certificate. |
+| `-tls_min_version` | `"1.2"` | *(Optional)* Minimum acceptable TLS version: `"1.2"` or `"1.3"`. |
 
-> **Note:** If `-tls_cert_file` and `-tls_key_file` are omitted, cAdvisor falls back to standard HTTP mode.
+> **Note:** If `-tls_cert_file` and `-tls_key_file` are omitted, cAdvisor starts in plain HTTP mode on port `8080`.
 
 ---
 
-## 🚀 Quick Start: Running with SSL
+## 🚀 Quick Start & Usage Examples
 
-### 1. Docker Run
-Mount your certificate and private key into the container:
+### 1. Generate Certificates (Test / Self-Signed)
+
+For development or testing, generate a self-signed certificate and key:
 
 ```bash
-sudo docker run \
-  --volume=/:/rootfs:ro \
-  --volume=/var/run:/var/run:ro \
-  --volume=/sys:/sys:ro \
-  --volume=/var/lib/docker/:/var/lib/docker:ro \
-  --volume=/dev/disk/:/dev/disk:ro \
-  --volume=/etc/ssl/certs/cadvisor.crt:/etc/ssl/certs/cadvisor.crt:ro \
-  --volume=/etc/ssl/private/cadvisor.key:/etc/ssl/private/cadvisor.key:ro \
-  --publish=8443:8443 \
-  --detach=true \
+mkdir -p /etc/cadvisor-certs
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+  -keyout /etc/cadvisor-certs/cadvisor.key \
+  -out /etc/cadvisor-certs/cadvisor.crt \
+  -subj "/CN=cadvisor.local"
+```
+
+---
+
+### 2. Run with Docker
+
+Mount your certificate directory and pass the `-tls_cert_file` and `-tls_key_file` flags:
+
+```bash
+docker run -d \
   --name=cadvisor-ssl \
+  --restart=always \
   --privileged \
   --device=/dev/kmsg \
+  -p 8443:8443 \
+  -v /:/rootfs:ro \
+  -v /var/run:/var/run:ro \
+  -v /sys:/sys:ro \
+  -v /var/lib/docker/:/var/lib/docker:ro \
+  -v /dev/disk/:/dev/disk:ro \
+  -v /etc/cadvisor-certs:/etc/cadvisor-certs:ro \
   ghcr.io/udp1024/cadvisor-ssl:latest-ssl \
     -port=8443 \
-    -tls_cert_file=/etc/ssl/certs/cadvisor.crt \
-    -tls_key_file=/etc/ssl/private/cadvisor.key
+    -tls_cert_file=/etc/cadvisor-certs/cadvisor.crt \
+    -tls_key_file=/etc/cadvisor-certs/cadvisor.key
 ```
 
-### 2. Standalone Binary
+Verify your HTTPS endpoint:
 ```bash
-./cadvisor \
-  -port=8443 \
-  -tls_cert_file=/path/to/server.crt \
-  -tls_key_file=/path/to/server.key \
-  -tls_min_version=1.3
+# Test healthz
+curl -k https://localhost:8443/healthz
+
+# Test Prometheus metrics
+curl -k https://localhost:8443/metrics
 ```
 
-### 3. Prometheus Scrape Configuration (`prometheus.yml`)
-To scrape metrics over HTTPS:
+---
 
+### 3. Run with Docker Compose
+
+Save this configuration as `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  cadvisor:
+    image: ghcr.io/udp1024/cadvisor-ssl:latest-ssl
+    container_name: cadvisor-ssl
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    ports:
+      - "8443:8443"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+      - ./certs:/etc/cadvisor-certs:ro
+    command:
+      - -port=8443
+      - -tls_cert_file=/etc/cadvisor-certs/cadvisor.crt
+      - -tls_key_file=/etc/cadvisor-certs/cadvisor.key
+      - -tls_min_version=1.3
+```
+
+---
+
+### 4. Deploy to Kubernetes (DaemonSet)
+
+#### A. Create the TLS Secret
+```bash
+kubectl create secret tls cadvisor-tls \
+  --cert=/path/to/tls.crt \
+  --key=/path/to/tls.key \
+  -n kube-system
+```
+
+#### B. DaemonSet Manifest
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cadvisor-ssl
+  namespace: kube-system
+  labels:
+    app: cadvisor-ssl
+spec:
+  selector:
+    matchLabels:
+      app: cadvisor-ssl
+  template:
+    metadata:
+      labels:
+        app: cadvisor-ssl
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      containers:
+        - name: cadvisor
+          image: ghcr.io/udp1024/cadvisor-ssl:latest-ssl
+          resources:
+            requests:
+              memory: 200Mi
+              cpu: 100m
+            limits:
+              memory: 1000Mi
+              cpu: 300m
+          securityContext:
+            privileged: true
+          command:
+            - /usr/bin/cadvisor
+            - -logtostderr
+            - -port=8443
+            - -tls_cert_file=/etc/ssl/cadvisor/tls.crt
+            - -tls_key_file=/etc/ssl/cadvisor/tls.key
+          ports:
+            - name: https
+              containerPort: 8443
+              hostPort: 8443
+          volumeMounts:
+            - name: rootfs
+              mountPath: /rootfs
+              readOnly: true
+            - name: var-run
+              mountPath: /var/run
+              readOnly: true
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+            - name: docker
+              mountPath: /var/lib/docker
+              readOnly: true
+            - name: certs
+              mountPath: /etc/ssl/cadvisor
+              readOnly: true
+      volumes:
+        - name: rootfs
+          hostPath:
+            path: /
+        - name: var-run
+          hostPath:
+            path: /var/run
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: docker
+          hostPath:
+            path: /var/lib/docker
+        - name: certs
+          secret:
+            secretName: cadvisor-tls
+```
+
+---
+
+### 5. Scrape with Prometheus
+
+Configure your `prometheus.yml`:
+
+#### Standard HTTPS Scraping:
 ```yaml
 scrape_configs:
   - job_name: 'cadvisor-ssl'
     scheme: https
     static_configs:
-      - targets: ['cadvisor.example.com:8443']
+      - targets: ['node1.example.com:8443', 'node2.example.com:8443']
     tls_config:
       ca_file: /etc/prometheus/ca.crt
-      # Or if using self-signed certs:
+      # If using self-signed certs without private CA:
       # insecure_skip_verify: true
+```
+
+#### Mutual TLS (mTLS) Scraping:
+```yaml
+scrape_configs:
+  - job_name: 'cadvisor-mtls'
+    scheme: https
+    static_configs:
+      - targets: ['node1.example.com:8443']
+    tls_config:
+      ca_file: /etc/prometheus/ca.crt
+      cert_file: /etc/prometheus/client.crt
+      key_file: /etc/prometheus/client.key
 ```
 
 ---
 
-## Upstream Google cAdvisor Details
+## 🤖 Automated Upstream Release Tracking
 
-cAdvisor (Container Advisor) provides container users an understanding of the resource usage and performance characteristics of their running containers. It is a running daemon that collects, aggregates, processes, and exports information about running containers. Specifically, for each container it keeps resource isolation parameters, historical resource usage, histograms of complete historical resource usage and network statistics. This data is exported by container and machine-wide.
+This repository does not require manual maintenance when Google updates cAdvisor.
 
-cAdvisor has native support for [Docker](https://github.com/docker/docker) containers and should support just about any other container type out of the box. We strive for support across the board so feel free to open an issue if that is not the case. cAdvisor's container abstraction is based on [lmctfy](https://github.com/google/lmctfy)'s so containers are inherently nested hierarchically.
-
-#### Quick Start: Running cAdvisor in a Docker Container
-
-To quickly tryout cAdvisor on your machine with Docker, we have a Docker image that includes everything you need to get started. You can run a single cAdvisor to monitor the whole machine. Simply run:
-
-```
-VERSION=0.55.1 # use the latest release version from https://github.com/google/cadvisor/releases
-sudo docker run \
-  --volume=/:/rootfs:ro \
-  --volume=/var/run:/var/run:ro \
-  --volume=/sys:/sys:ro \
-  --volume=/var/lib/docker/:/var/lib/docker:ro \
-  --volume=/dev/disk/:/dev/disk:ro \
-  --publish=8080:8080 \
-  --detach=true \
-  --name=cadvisor \
-  --privileged \
-  --device=/dev/kmsg \
-  ghcr.io/google/cadvisor:$VERSION # for versions prior to v0.53.0, use gcr.io/cadvisor/cadvisor instead
+```mermaid
+flowchart LR
+    A["Google Upstream cAdvisor"] -->|"New Tag (e.g. v0.61.0)"| B["GitHub Actions (Daily 03:00 UTC)"]
+    B --> C["Mirror upstream-tracking Branch"]
+    B --> D["Rebase SSL Commits onto New Tag"]
+    D --> E["Build Multi-Arch Docker Container"]
+    E --> F["Push to GHCR & Docker Hub"]
+    E --> G["Publish GitHub Release"]
 ```
 
-cAdvisor is now running (in the background) on `http://localhost:8080`. The setup includes directories with Docker state cAdvisor needs to observe.
+* **Automated Sync**: A daily scheduled workflow checks Google's repository.
+* **Semantic Version Tagging**: When Google releases `v0.61.0`, our action automatically tags and builds `v0.61.0-ssl`.
+* **Zero Disruption Conflict Safety**: If Google ever refactors networking code causing a git conflict, the rebase is automatically aborted (`git rebase --abort`), leaving the current production branch untouched while an automated Issue is opened with exact resolution instructions.
 
-**Note**: If you're running on CentOS, Fedora, or RHEL (or are using LXC), take a look at our [running instructions](docs/running.md).
+---
 
-We have detailed [instructions](docs/running.md#standalone) on running cAdvisor standalone outside of Docker. cAdvisor [running options](docs/runtime_options.md) may also be interesting for advanced usecases. If you want to build your own cAdvisor Docker image, see our [deployment](docs/deploy.md) page.
+## License & Credits
 
-For [Kubernetes](https://github.com/kubernetes/kubernetes) users, cAdvisor can be run as a daemonset. See the [instructions](deploy/kubernetes) for how to get started, and for how to [kustomize](https://github.com/kubernetes-sigs/kustomize#kustomize) it to fit your needs.
-
-## Building and Testing
-
-See the more detailed instructions in the [build page](docs/development/build.md). This includes instructions for building and deploying the cAdvisor Docker image.
-
-## Exporting stats
-
-cAdvisor supports exporting stats to various storage plugins. See the [documentation](docs/storage/README.md) for more details and examples.
-
-## Web UI
-
-cAdvisor exposes a web UI at its port:
-
-`http://<hostname>:<port>/`
-
-See the [documentation](docs/web.md) for more details.
-
-## Remote REST API & Clients
-
-cAdvisor exposes its raw and processed stats via a versioned remote REST API. See the API's [documentation](docs/api.md) for more information.
-
-There is also an official Go client implementation in the [client](client/) directory. See the [documentation](docs/clients.md) for more information.
-
-## Roadmap
-
-cAdvisor aims to improve the resource usage and performance characteristics of running containers. Today, we gather and expose this information to users. In our roadmap:
-
-- Advise on the performance of a container (e.g.: when it is being negatively affected by another, when it is not receiving the resources it requires, etc).
-- Auto-tune the performance of the container based on previous advise.
-- Provide usage prediction to cluster schedulers and orchestration layers.
-
-## Community
-
-Contributions, questions, and comments are all welcomed and encouraged! cAdvisor developers hang out on [Slack](https://kubernetes.slack.com) in the #sig-node channel (get an invitation [here](http://slack.kubernetes.io/)). We also have [discuss.kubernetes.io](https://discuss.kubernetes.io/).
-
-Please reach out and get involved in the project, we're actively looking for more contributors to bring on board!
-
-### Core Team
-* [@bobbypage, Google](https://github.com/bobbypage)
-* [@iwankgb, Independent](https://github.com/iwankgb)
-* [@creatone, Independent](https://github.com/creatone)
-* [@dims, VMWare](https://github.com/dims)
-* [@mrunalp, RedHat](https://github.com/mrunalp)
-
-### Frequent Collaborators
-* [@haircommander, RedHat](https://github.com/haircommander)
-
-### Emeritus
-* [@dashpole, Google](https://github.com/dashpole)
-* [@dchen1107, Google](https://github.com/dchen1107)
-* [@derekwaynecarr, RedHat](https://github.com/derekwaynecarr)
+* Base cAdvisor is copyright Google Inc. and licensed under the [Apache License 2.0](LICENSE).
+* SSL / TLS enhancement maintained by [udp1024](https://github.com/udp1024).
