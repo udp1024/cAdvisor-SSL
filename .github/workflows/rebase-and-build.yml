@@ -116,6 +116,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase Repository Name for Docker
+        if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
+        id: image_info
+        run: |
+          IMAGE_NAME="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+
       - name: Build and Push Docker Container
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
         uses: docker/build-push-action@v5
@@ -126,8 +133,8 @@ jobs:
             VERSION=${{ steps.target.outputs.target }}-ssl
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.target.outputs.target }}-ssl
-            ghcr.io/${{ github.repository }}:latest-ssl
+            ${{ steps.image_info.outputs.image_name }}:${{ steps.target.outputs.target }}-ssl
+            ${{ steps.image_info.outputs.image_name }}:latest-ssl
 
       - name: Create Git Tag and GitHub Release
         if: steps.check_state.outputs.needs_rebase == 'true' && steps.rebase_step.outputs.rebase_status == 'success'
@@ -136,6 +143,7 @@ jobs:
         run: |
           TARGET="${{ steps.target.outputs.target }}"
           RELEASE_TAG="${TARGET}-ssl"
+          IMAGE_NAME="${{ steps.image_info.outputs.image_name }}"
 
           # Only create release if target was a tag, not upstream/master
           if [ "$TARGET" != "upstream/master" ]; then
@@ -154,8 +162,8 @@ jobs:
 
           ### Container Image
           \`\`\`bash
-          docker pull ghcr.io/${{ github.repository }}:$RELEASE_TAG
-          docker pull ghcr.io/${{ github.repository }}:latest-ssl
+          docker pull ${IMAGE_NAME}:$RELEASE_TAG
+          docker pull ${IMAGE_NAME}:latest-ssl
           \`\`\`"
             fi
           fi
